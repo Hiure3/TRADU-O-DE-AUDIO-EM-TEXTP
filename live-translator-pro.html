@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LIVE TRANSLATOR PRO (teste no navegador)</title>
+<style>
+:root{--bg:#0b1020;--panel:#121a30;--line:#22305a;--txt:#e6ecff;--mut:#8b98c4;--blue:#3b82f6;--ok:#38bdf8;--warn:#f59e0b}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--txt);font-family:Segoe UI,system-ui,sans-serif;display:flex;flex-direction:column;height:100vh}
+header{display:flex;flex-wrap:wrap;gap:10px;align-items:center;padding:10px 16px;background:var(--panel);border-bottom:1px solid var(--line)}
+h1{font-size:16px;margin:0;letter-spacing:1px;color:var(--blue)}
+.badge{padding:3px 10px;border-radius:99px;background:#1b2750;font-size:12px;color:var(--mut)}
+.badge.on{background:#0c3b2a;color:#4ade80}
+select,button,input{background:#17214a;color:var(--txt);border:1px solid var(--line);border-radius:8px;padding:7px 10px;font-size:13px}
+button{cursor:pointer}button:hover:not(:disabled){border-color:var(--blue)}
+button:disabled{opacity:.4;cursor:not-allowed}
+button.primary{background:var(--blue);border-color:var(--blue);font-weight:600}
+.bar{display:flex;flex-wrap:wrap;gap:8px;padding:8px 16px;border-bottom:1px solid var(--line)}
+main{flex:1;display:grid;grid-template-columns:1fr 1fr;gap:12px;padding:12px 16px;min-height:0}
+section{background:var(--panel);border:1px solid var(--line);border-radius:12px;display:flex;flex-direction:column;min-height:0}
+section h2{margin:0;padding:10px 14px;font-size:12px;letter-spacing:2px;color:var(--mut);border-bottom:1px solid var(--line)}
+.body{flex:1;overflow:auto;padding:12px 14px;font-size:var(--fs,20px);line-height:1.45}
+.seg{margin-bottom:10px}
+.prov{color:#7b86ad;font-style:italic}
+.rec{color:var(--txt)}
+.conf{color:var(--ok)}
+.pend{color:var(--warn);font-size:.7em}
+footer{display:flex;flex-wrap:wrap;gap:14px;align-items:center;padding:8px 16px;background:var(--panel);border-top:1px solid var(--line);font-size:12px;color:var(--mut)}
+canvas{background:#0a0f20;border-radius:6px;border:1px solid var(--line)}
+#log{color:var(--warn)}
+#tabs{display:flex;gap:6px;padding:8px 16px 0;border-bottom:1px solid var(--line)}
+#tabs button{border-radius:8px 8px 0 0;border-bottom:none}
+#tabs button.act{background:var(--blue);border-color:var(--blue)}
+#impPanel{display:none}
+body.imp #impPanel{display:flex}
+body.imp #liveBar{display:none}
+progress{width:220px;height:14px}
+body.caps main{grid-template-columns:1fr}
+body.caps section:first-child{display:none}
+body.caps .body{text-align:center;font-size:34px}
+@media(max-width:800px){main{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<header>
+  <h1>LIVE TRANSLATOR PRO</h1>
+  <span class="badge" id="status">Parado</span>
+  <label>Origem <select id="src"></select></label>
+  <label>Destino <select id="tgt"></select></label>
+  <label>Modo <select id="mode"><option value="hi">Alta precisão</option><option value="fast">Instantâneo</option></select></label>
+</header>
+<div class="bar">
+  <label>Modelo <select id="model">
+    <option value="Xenova/whisper-tiny">Whisper tiny (~40 MB, rápido, menos preciso)</option>
+    <option value="Xenova/whisper-base" selected>Whisper base (~75 MB)</option>
+    <option value="Xenova/whisper-small">Whisper small (~250 MB, mais preciso)</option></select></label>
+  <label>Tradução <select id="prov">
+    <option value="mm">MyMemory (online, aceita origem automática)</option>
+    <option value="nllb">NLLB local (~600 MB, exige origem manual)</option></select></label>
+  <label>Sensibilidade <input type="range" id="sens" min="1" max="30" value="4"></label>
+  <label>Fonte <input type="range" id="fs" min="14" max="48" value="20"></label>
+</div>
+<div id="tabs"><button id="tLive" class="act">CAPTURA AO VIVO</button><button id="tImp">IMPORTAR ÁUDIO</button></div>
+<div class="bar" id="impPanel">
+  <input type="file" id="file" accept="audio/*,video/*,.mp3,.wav,.m4a,.ogg,.flac,.mp4,.mkv,.webm">
+  <button id="bClear2">LIMPAR</button><button id="bSrt2">EXPORTAR SRT</button><button id="bTxt2">EXPORTAR TXT</button><button class="primary" id="bImp" disabled>TRANSCREVER E TRADUZIR</button>
+  <button id="bImpStop" disabled>CANCELAR</button>
+  <progress id="prog" value="0" max="100"></progress>
+  <span id="impInfo" style="color:var(--mut);font-size:12px">Escolha um arquivo (MP3, WAV, M4A, OGG, FLAC, MP4, WEBM…)</span>
+</div>
+<div class="bar" id="liveBar">
+  <button class="primary" id="bStart">INICIAR CAPTURA</button>
+  <button id="bPause" disabled>PAUSAR</button>
+  <button id="bResume" disabled>CONTINUAR</button>
+  <button id="bStop" disabled>ENCERRAR</button>
+  <button id="bClear">LIMPAR TEXTO</button>
+  <button id="bCopyO">COPIAR ORIGINAL</button>
+  <button id="bCopyT">COPIAR TRADUÇÃO</button>
+  <button id="bTxt">EXPORTAR TXT</button>
+  <button id="bSrt">EXPORTAR SRT</button>
+  <button id="bCap">MODO LEGENDAS</button>
+</div>
+<main>
+  <section><h2>ÁUDIO ORIGINAL</h2><div class="body" id="orig"></div></section>
+  <section><h2>TRADUÇÃO</h2><div class="body" id="trad"></div></section>
+</main>
+<footer>
+  <canvas id="wave" width="260" height="36"></canvas>
+  <span>Nível: <b id="lvl">0</b></span>
+  <span>Tempo: <b id="clock">00:00</b></span>
+  <span>Reconhecimento: <b id="stRec">—</b></span>
+  <span>Tradução: <b id="stTr">—</b></span>
+  <span>Latência: <b id="lat">—</b></span>
+  <span id="log"></span>
+</footer>
+
+<script type="module">
+const $=id=>document.getElementById(id);
+const LANGS=[["en","English","english","eng_Latn","en"],["pt","Português (BR)","portuguese","por_Latn","pt-BR"],["es","Español","spanish","spa_Latn","es"],["fr","Français","french","fra_Latn","fr"],["de","Deutsch","german","deu_Latn","de"],["it","Italiano","italian","ita_Latn","it"],["ja","日本語","japanese","jpn_Jpan","ja"],["zh","中文","chinese","zho_Hans","zh-CN"],["ko","한국어","korean","kor_Hang","ko"],["ru","Русский","russian","rus_Cyrl","ru"],["ar","العربية","arabic","arb_Arab","ar"]];
+$("src").innerHTML='<option value="auto">Detectar automaticamente</option>'+LANGS.map(l=>`<option value="${l[0]}">${l[1]}</option>`).join("");
+$("tgt").innerHTML=LANGS.map(l=>`<option value="${l[0]}"${l[0]==="pt"?" selected":""}>${l[1]}</option>`).join("");
+const L=c=>LANGS.find(l=>l[0]===c);
+
+let segs=[],stream,ctx,proc,paused=false,running=false,t0=0,pausedAt=0,pausedTotal=0;
+let buf=[],bufLen=0,silenceMs=0,speechMs=0,segStart=0,lastProv=0,provBusy=false;
+const SR=16000, queue=[]; let working=false, asr=null, asrName="", nllb=null;
+const setStatus=(t,on)=>{$("status").textContent=t;$("status").classList.toggle("on",!!on)};
+const log=t=>{$("log").textContent=t};
+
+/* ---------- renderização ---------- */
+function render(){
+  const o=$("orig"),t=$("trad");
+  const nearO=o.scrollTop+o.clientHeight>=o.scrollHeight-40;
+  o.innerHTML=segs.map(s=>`<div class="seg ${s.state==="prov"?"prov":"rec"}">${esc(s.text)}</div>`).join("");
+  t.innerHTML=segs.map(s=>s.trans?`<div class="seg conf">${esc(s.trans)}</div>`:(s.state==="prov"?"":`<div class="seg pend">traduzindo…</div>`)).join("");
+  if(nearO){o.scrollTop=o.scrollHeight;t.scrollTop=t.scrollHeight}
+}
+const esc=s=>s.replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));
+
+/* ---------- modelos ---------- */
+let tf;
+async function loadTf(){ if(!tf) tf=await import("https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.0.2"); return tf }
+async function getAsr(){
+  const name=$("model").value;
+  if(asr&&asrName===name) return asr;
+  setStatus("Carregando modelo de voz…"); $("stRec").textContent="baixando modelo";
+  const {pipeline}=await loadTf();
+  const prog=p=>{if(p.status==="progress")log(`Baixando ${p.file||""} ${Math.round(p.progress||0)}%`)};
+  try{ asr=await pipeline("automatic-speech-recognition",name,{device:navigator.gpu?"webgpu":"wasm",dtype:navigator.gpu?"fp32":"q8",progress_callback:prog}); }
+  catch(e){ asr=await pipeline("automatic-speech-recognition",name,{device:"wasm",dtype:"q8",progress_callback:prog}); }
+  asrName=name; log(""); $("stRec").textContent="pronto"; return asr;
+}
+async function getNllb(){
+  if(nllb) return nllb;
+  const {pipeline}=await loadTf();
+  $("stTr").textContent="baixando NLLB";
+  nllb=await pipeline("translation","Xenova/nllb-200-distilled-600M",{dtype:"q8",progress_callback:p=>{if(p.status==="progress")log(`NLLB ${Math.round(p.progress||0)}%`)}});
+  log(""); return nllb;
+}
+
+
+/* ---------- diagnóstico de rede ---------- */
+let diagBusy=false;
+async function diag(){
+  if(diagBusy) return; diagBusy=true;
+  const tests=[["jsDelivr (biblioteca)","https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.0.2/package.json"],["Hugging Face (modelo)","https://huggingface.co/Xenova/whisper-tiny/resolve/main/config.json"]];
+  const res=[];
+  for(const [n,u] of tests){ try{ const r=await fetch(u); res.push((r.ok?"OK     ":"HTTP "+r.status+" ")+n) }catch(e){ res.push("FALHOU "+n) } }
+  const proto=location.protocol;
+  const m="Falha ao baixar o modelo de voz.\n\n"+res.join("\n")+"\n\nPágina aberta como: "+proto+"//\n\n"+
+   (res.some(x=>x.startsWith("FALHOU"))?"• O site marcado como FALHOU está bloqueado no seu computador/rede. Desative AdBlock/uBlock, VPN ou proxy, libere o antivírus/firewall para esse site e tente outra rede (ex.: celular como hotspot).\n":"")+
+   (proto==="file:"?"• Você abriu o arquivo direto da pasta. Abra pelo servidor local: no CMD, dentro da pasta do arquivo, rode  python -m http.server 8000  e acesse http://localhost:8000/live-translator-pro.html\n":"")+
+   "\nDepois de resolver, recarregue a página (F5).";
+  log("Falha de rede ao baixar o modelo."); alert(m); diagBusy=false;
+}
+
+/* ---------- tradução ---------- */
+async function translate(text,srcCode){
+  const tg=L($("tgt").value);
+  if($("prov").value==="nllb"){
+    if(srcCode==="auto") throw new Error("NLLB exige idioma de origem manual");
+    const t=await getNllb();
+    const r=await t(text,{src_lang:L(srcCode)[3],tgt_lang:tg[3]});
+    return r[0].translation_text;
+  }
+  const lp=(srcCode==="auto"?"Autodetect":L(srcCode)[4])+"|"+tg[4];
+  const r=await fetch("https://api.mymemory.translated.net/get?q="+encodeURIComponent(text)+"&langpair="+encodeURIComponent(lp));
+  const j=await r.json();
+  if(!j.responseData) throw new Error("MyMemory sem resposta");
+  return j.responseData.translatedText;
+}
+
+/* ---------- fila de processamento ---------- */
+const BAD=/^(\s*[\[(].*[\])]\s*|\.+|thanks for watching\.?|obrigado\.?|you)$/i;
+async function work(){
+  if(working) return; working=true;
+  while(queue.length){
+    const job=queue.shift(); const seg=job.seg;
+    try{
+      const a=await getAsr(); setStatus("Capturando",true); $("stRec").textContent="reconhecendo";
+      const t1=performance.now();
+      const src=$("src").value;
+      const opt={chunk_length_s:30,task:"transcribe"}; if(src!=="auto") opt.language=L(src)[2];
+      const out=await a(job.audio,opt);
+      const text=(out.text||"").trim();
+      $("stRec").textContent="ocioso";
+      if(!text||BAD.test(text)){ segs=segs.filter(s=>s!==seg); render(); continue; }
+      seg.text=text; render();
+      if(job.prov){ seg.state="prov"; render(); continue; }
+      seg.state="rec"; render();
+      $("stTr").textContent="traduzindo";
+      try{ seg.trans=await translate(text,src); seg.state="conf"; $("stTr").textContent="ok" }
+      catch(e){ seg.trans="[erro de tradução: "+e.message+"]"; $("stTr").textContent="erro" }
+      $("lat").textContent=((performance.now()-t1)/1000).toFixed(1)+" s";
+      render();
+    }catch(e){ console.error(e); segs=segs.filter(s=>s!==seg); queue.length=0; render();
+      if(/fetch|network|load/i.test(e.message||"")) diag(); else log("Erro: "+e.message); }
+  }
+  working=false;
+}
+
+/* ---------- captura + VAD ---------- */
+const now=()=>(performance.now()-t0-pausedTotal)/1000;
+function snapshot(){ const a=new Float32Array(bufLen); let o=0; for(const b of buf){a.set(b,o);o+=b.length} return a }
+function flush(){
+  if(speechMs<350){ buf=[];bufLen=0;speechMs=0;silenceMs=0; return }
+  const audio=snapshot(); buf=[];bufLen=0;speechMs=0;silenceMs=0;
+  let seg=segs.find(s=>s.state==="prov"&&s.live);
+  if(!seg){seg={id:crypto.randomUUID(),start:segStart,end:now(),text:"",trans:"",state:"prov"};segs.push(seg)}
+  seg.live=false; seg.end=now(); seg.state="pend";
+  queue.push({seg,audio,prov:false}); work(); provBusy=false;
+}
+function onAudio(e){
+  if(paused) return;
+  const x=e.inputBuffer.getChannelData(0); const chunk=new Float32Array(x);
+  let sum=0; for(let i=0;i<chunk.length;i++) sum+=chunk[i]*chunk[i];
+  const rms=Math.sqrt(sum/chunk.length), thr=$("sens").value/1000;
+  $("lvl").textContent=Math.min(100,Math.round(rms*400))+"%";
+  drawWave(chunk);
+  const ms=chunk.length/ctx.sampleRate*1000;
+  if(rms>thr){ if(!bufLen) segStart=now(); speechMs+=ms; silenceMs=0; }
+  else silenceMs+=ms;
+  if(bufLen||rms>thr){ buf.push(chunk); bufLen+=chunk.length; }
+  const lenS=bufLen/ctx.sampleRate;
+  const hi=$("mode").value==="hi";
+  if(bufLen&&(silenceMs>(hi?900:500)||lenS>(hi?20:10))) flush();
+  else if(!hi&&speechMs>2500&&performance.now()-lastProv>3000&&!working&&!provBusy){
+    lastProv=performance.now(); provBusy=true;
+    let seg=segs.find(s=>s.live); if(!seg){seg={id:crypto.randomUUID(),start:segStart,end:now(),text:"",trans:"",state:"prov",live:true};segs.push(seg)}
+    const a=snapshot(); queue.push({seg,audio:resample(a,ctx.sampleRate),prov:true}); work().then(()=>provBusy=false);
+  }
+  $("clock").textContent=fmt(now());
+}
+function resample(a,sr){ if(sr===SR) return a; const r=sr/SR, n=Math.floor(a.length/r), o=new Float32Array(n); for(let i=0;i<n;i++){const p=i*r,i0=Math.floor(p),f=p-i0;o[i]=a[i0]*(1-f)+(a[i0+1]??a[i0])*f} return o }
+// converte jobs finais para 16 kHz antes de processar
+const _push=queue.push.bind(queue); queue.push=j=>{ if(!j.prov&&ctx) j.audio=resample(j.audio,ctx.sampleRate); return _push(j) };
+
+function drawWave(d){ const c=$("wave"),g=c.getContext("2d"); g.clearRect(0,0,c.width,c.height); g.strokeStyle="#3b82f6"; g.beginPath(); const step=Math.floor(d.length/c.width)||1; for(let i=0;i<c.width;i++){const v=d[i*step]||0; const y=c.height/2+v*c.height*1.6; i?g.lineTo(i,y):g.moveTo(i,y)} g.stroke() }
+const fmt=s=>String(Math.floor(s/60)).padStart(2,"0")+":"+String(Math.floor(s%60)).padStart(2,"0");
+
+async function start(){
+  try{
+    stream=await navigator.mediaDevices.getDisplayMedia({video:true,audio:{echoCancellation:false,noiseSuppression:false,autoGainControl:false}});
+  }catch(e){
+    const emb=(window.top!==window.self);
+    log("Captura não iniciada ("+(e.name||"erro")+"). "+(emb?"A página está dentro de um quadro incorporado: abra o arquivo direto no Chrome.":"Clique em COMPARTILHAR na janela do navegador, sem fechar nem cancelar."));
+    if(emb||e.name==="NotAllowedError"&&!navigator.userActivation?.isActive) alert("O navegador bloqueou a captura de tela/áudio.\n\nSe você abriu este arquivo dentro do Claude (visualização), isso é bloqueado. Baixe o arquivo, abra a pasta Downloads e dê dois cliques nele para abrir direto no Chrome ou Edge.");
+    return }
+  if(!stream.getAudioTracks().length){ stream.getTracks().forEach(t=>t.stop());
+    const m="O áudio NÃO foi compartilhado.\n\nNa janela do Chrome/Edge:\n• Escolha a aba 'Guia do Chrome' (ou 'Tela inteira'). 'Janela' NÃO captura áudio.\n• Marque a caixa 'Compartilhar áudio da guia' (ou 'Compartilhar áudio do sistema') no canto inferior da janela.\n• Firefox e Safari não suportam captura de áudio: use Chrome ou Edge no Windows.";
+    log("Áudio não compartilhado."); alert(m); return }
+  stream.getVideoTracks().forEach(t=>t.enabled=false);
+  stream.getAudioTracks()[0].addEventListener("ended",stop);
+  ctx=new AudioContext(); await ctx.resume(); const srcNode=ctx.createMediaStreamSource(new MediaStream(stream.getAudioTracks()));
+  setTimeout(()=>{ if(running&&!paused&&$("lvl").textContent==="0%"&&speechMs===0) log("Sem som detectado. Verifique se o áudio está tocando e aumente a sensibilidade (barra 'Sensibilidade' para a direita)."); },6000);
+  proc=ctx.createScriptProcessor(4096,1,1); srcNode.connect(proc); proc.connect(ctx.destination); proc.onaudioprocess=onAudio;
+  // o áudio capturado não é reproduzido por este processador (saída silenciosa)
+  t0=performance.now(); pausedTotal=0; running=true; paused=false;
+  $("bStart").disabled=true; $("bPause").disabled=false; $("bStop").disabled=false; setStatus("Capturando",true);
+  getAsr().then(()=>setStatus("Capturando",true)).catch(e=>{console.error(e);diag()});
+}
+function stop(){ if(!running) return; running=false; if(bufLen) flush(); proc&&proc.disconnect(); stream&&stream.getTracks().forEach(t=>t.stop()); ctx&&ctx.close();
+  $("bStart").disabled=false;["bPause","bResume","bStop"].forEach(i=>$(i).disabled=true); setStatus("Parado",false) }
+$("bStart").onclick=start; $("bStop").onclick=stop;
+$("bPause").onclick=()=>{paused=true;pausedAt=performance.now();$("bPause").disabled=true;$("bResume").disabled=false;setStatus("Pausado",false)};
+$("bResume").onclick=()=>{pausedTotal+=performance.now()-pausedAt;paused=false;$("bPause").disabled=false;$("bResume").disabled=true;setStatus("Capturando",true)};
+$("bClear").onclick=()=>{segs=[];render()};
+$("fs").oninput=e=>document.documentElement.style.setProperty("--fs",e.target.value+"px");
+$("bCap").onclick=()=>document.body.classList.toggle("caps");
+const copy=t=>navigator.clipboard.writeText(t).then(()=>log("Copiado."));
+const done=()=>segs.filter(s=>s.state!=="prov");
+$("bCopyO").onclick=()=>copy(done().map(s=>s.text).join("\n"));
+$("bCopyT").onclick=()=>copy(done().map(s=>s.trans).join("\n"));
+const dl=(n,t)=>{const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([t],{type:"text/plain;charset=utf-8"}));a.download=n;a.click()};
+$("bTxt").onclick=()=>dl("sessao.txt",done().map(s=>`[${fmt(s.start)}] ${s.text}\n        → ${s.trans}`).join("\n\n"));
+const ts=s=>{const h=Math.floor(s/3600),m=Math.floor(s%3600/60),x=Math.floor(s%60),ms=Math.floor((s%1)*1000);return [h,m,x].map(n=>String(n).padStart(2,"0")).join(":")+","+String(ms).padStart(3,"0")};
+$("bSrt").onclick=()=>dl("legendas.srt",done().filter(s=>s.trans).map((s,i)=>`${i+1}\n${ts(s.start)} --> ${ts(Math.max(s.end,s.start+1))}\n${s.trans}\n`).join("\n"));
+
+/* ---------- aba: importar áudio ---------- */
+let impAudio=null,impCancel=false;
+$("tLive").onclick=()=>{document.body.classList.remove("imp");$("tLive").classList.add("act");$("tImp").classList.remove("act")};
+$("tImp").onclick=()=>{document.body.classList.add("imp");$("tImp").classList.add("act");$("tLive").classList.remove("act")};
+$("file").onchange=async e=>{
+  const f=e.target.files[0]; impAudio=null; $("bImp").disabled=true; if(!f) return;
+  $("impInfo").textContent="Decodificando "+f.name+"…";
+  try{
+    const c=new AudioContext({sampleRate:SR});
+    const ab=await c.decodeAudioData(await f.arrayBuffer()); c.close();
+    const n=ab.length, m=new Float32Array(n);
+    for(let ch=0;ch<ab.numberOfChannels;ch++){const d=ab.getChannelData(ch);for(let i=0;i<n;i++)m[i]+=d[i]/ab.numberOfChannels}
+    impAudio=m; $("impInfo").textContent=f.name+" — duração "+fmt(n/SR); $("bImp").disabled=false;
+  }catch(err){ $("impInfo").textContent="Não foi possível ler este arquivo ("+err.message+")."; }
+};
+function splitSpeech(a){
+  const F=480, thr=$("sens").value/1000, regs=[]; let st=-1,last=-1;
+  for(let i=0;i+F<=a.length;i+=F){
+    let sum=0;for(let j=i;j<i+F;j++)sum+=a[j]*a[j];
+    const sp=Math.sqrt(sum/F)>thr, t=i/SR;
+    if(sp){ if(st<0)st=t; last=t+F/SR }
+    else if(st>=0&&t-last>0.7){ regs.push([st,last]); st=-1 }
+    if(st>=0&&t-st>25){ regs.push([st,t]); st=-1 }
+  }
+  if(st>=0) regs.push([st,last]);
+  return regs.filter(r=>r[1]-r[0]>0.35);
+}
+$("bImpStop").onclick=()=>{impCancel=true};
+$("bImp").onclick=async()=>{
+  if(!impAudio) return; impCancel=false;
+  $("bImp").disabled=true;$("bImpStop").disabled=false;$("file").disabled=true;
+  const regs=splitSpeech(impAudio); $("prog").max=regs.length||1; $("prog").value=0;
+  if(!regs.length){ $("impInfo").textContent="Nenhuma fala detectada. Aumente a sensibilidade."; }
+  try{
+    const a=await getAsr(); const src=$("src").value;
+    for(let i=0;i<regs.length&&!impCancel;i++){
+      const [s0,s1]=regs[i];
+      const audio=impAudio.slice(Math.max(0,Math.floor((s0-0.2)*SR)),Math.min(impAudio.length,Math.floor((s1+0.2)*SR)));
+      $("impInfo").textContent=`Trecho ${i+1} de ${regs.length} (${fmt(s0)})`; $("stRec").textContent="reconhecendo";
+      const opt={chunk_length_s:30,task:"transcribe"}; if(src!=="auto") opt.language=L(src)[2];
+      const out=await a(audio,opt); const text=(out.text||"").trim();
+      if(text&&!BAD.test(text)){
+        const seg={id:crypto.randomUUID(),start:s0,end:s1,text,trans:"",state:"rec"}; segs.push(seg); render();
+        $("stTr").textContent="traduzindo";
+        try{ seg.trans=await translate(text,src); seg.state="conf" }catch(e){ seg.trans="[erro de tradução: "+e.message+"]" }
+        render();
+      }
+      $("prog").value=i+1;
+    }
+    $("impInfo").textContent=impCancel?"Cancelado.":"Concluído. Use COPIAR/EXPORTAR na aba ao vivo ou abaixo.";
+  }catch(e){ $("impInfo").textContent="Erro: "+e.message; console.error(e); if(/fetch|network|load/i.test(e.message||"")) diag(); }
+  $("stRec").textContent="ocioso";$("stTr").textContent="ok";
+  $("bImp").disabled=false;$("bImpStop").disabled=true;$("file").disabled=false;
+};
+$("bClear2").onclick=()=>$("bClear").click();$("bSrt2").onclick=()=>$("bSrt").click();$("bTxt2").onclick=()=>$("bTxt").click();
+</script>
+</body>
+</html>
